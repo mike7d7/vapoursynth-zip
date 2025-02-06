@@ -53,7 +53,7 @@
       apps.bundle.default = apps.bundle.target.${system-triple};
 
       # nix run .
-      apps.default = env.app [] "zig build run -- \"$@\"";
+      apps.default = env.app [] "zig build \"$@\"";
 
       # nix run .#build
       apps.build = env.app [] "zig build \"$@\"";
