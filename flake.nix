@@ -28,6 +28,7 @@
         # This disables LD_LIBRARY_PATH mangling, binary patching etc...
         # The package won't be usable inside nix.
         zigDisableWrap = true;
+        zigBuildZonLock = ./build.zig.zon2json-lock;
       } // optionalAttrs (!pathExists ./build.zig.zon) {
         pname = "vapoursynth-zip";
         version = "R5";

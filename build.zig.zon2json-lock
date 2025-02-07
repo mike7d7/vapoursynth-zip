@@ -1,0 +1,7 @@
+{
+  "1220532eb543f1169a359cc0821533ce699c7fd81a2cd2fd00c886eec72df066adaf": {
+    "name": "vapoursynth",
+    "url": "git+https://github.com/dnjulek/vapoursynth-zig.git#078212d9cd1cf2911d3a30b49a2e23a3666b3197",
+    "hash": "sha256-v3QOVblzhImgasQp+iSqJV8aqdyj1m//XsYa5qylMgk="
+  }
+}
