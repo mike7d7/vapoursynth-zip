@@ -29,6 +29,7 @@
         # The package won't be usable inside nix.
         zigDisableWrap = true;
         zigBuildZonLock = ./build.zig.zon2json-lock;
+        zigBuildFlags = [ "-Doptimize=ReleaseFast" ];
         postInstall = ''
           mkdir -p $out/lib/vapoursynth
           mv $out/lib/*.so $out/lib/vapoursynth/
