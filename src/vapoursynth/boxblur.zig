@@ -3,44 +3,43 @@ const math = std.math;
 
 const boxblur_ct = @import("../filters/boxblur_comptime.zig");
 const boxblur_rt = @import("../filters/boxblur_runtime.zig");
-const helper = @import("../helper.zig");
+const hz = @import("../helper.zig");
 const vszip = @import("../vszip.zig");
-const vs = vszip.vs;
-const vsh = vszip.vsh;
-const zapi = vszip.zapi;
+
+const vapoursynth = vszip.vapoursynth;
+const vs = vapoursynth.vapoursynth4;
+const ZAPI = vapoursynth.ZAPI;
 
 const allocator = std.heap.c_allocator;
 pub const filter_name = "BoxBlur";
 
 pub const Data = struct {
-    node: ?*vs.Node,
-    vi: *const vs.VideoInfo,
-    hradius: u32,
-    vradius: u32,
-    hpasses: i32,
-    vpasses: i32,
-    tmp_size: u32,
-    planes: [3]bool,
+    node: ?*vs.Node = null,
+    vi: *const vs.VideoInfo = undefined,
+    hradius: u32 = 0,
+    vradius: u32 = 0,
+    hpasses: i32 = 0,
+    vpasses: i32 = 0,
+    tmp_size: u32 = 0,
+    planes: [3]bool = .{ true, true, true },
 };
 
 pub fn BoxBlurCT(comptime T: type, radius: comptime_int) type {
     return struct {
-        pub fn getFrame(n: c_int, activation_reason: vs.ActivationReason, instance_data: ?*anyopaque, frame_data: ?*?*anyopaque, frame_ctx: ?*vs.FrameContext, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.C) ?*const vs.Frame {
-            _ = frame_data;
+        pub fn getFrame(n: c_int, activation_reason: vs.ActivationReason, instance_data: ?*anyopaque, _: ?*?*anyopaque, frame_ctx: ?*vs.FrameContext, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.c) ?*const vs.Frame {
             const d: *Data = @ptrCast(@alignCast(instance_data));
+            const zapi = ZAPI.init(vsapi, core, frame_ctx);
 
             if (activation_reason == .Initial) {
-                vsapi.?.requestFrameFilter.?(n, d.node, frame_ctx);
+                zapi.requestFrameFilter(n, d.node);
             } else if (activation_reason == .AllFramesReady) {
-                const src = zapi.ZFrame.init(d.node, n, frame_ctx, core, vsapi);
+                const src = zapi.initZFrame(d.node, n);
                 defer src.deinit();
                 const dst = src.newVideoFrame2(d.planes);
 
                 var plane: u32 = 0;
                 while (plane < d.vi.format.numPlanes) : (plane += 1) {
-                    if (!(d.planes[plane])) {
-                        continue;
-                    }
+                    if (!(d.planes[plane])) continue;
 
                     const srcp = src.getReadSlice2(T, plane);
                     const dstp = dst.getWriteSlice2(T, plane);
@@ -58,14 +57,14 @@ pub fn BoxBlurCT(comptime T: type, radius: comptime_int) type {
 
 fn BoxBlurRT(comptime T: type) type {
     return struct {
-        pub fn getFrame(n: c_int, activation_reason: vs.ActivationReason, instance_data: ?*anyopaque, frame_data: ?*?*anyopaque, frame_ctx: ?*vs.FrameContext, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.C) ?*const vs.Frame {
-            _ = frame_data;
+        pub fn getFrame(n: c_int, activation_reason: vs.ActivationReason, instance_data: ?*anyopaque, _: ?*?*anyopaque, frame_ctx: ?*vs.FrameContext, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.c) ?*const vs.Frame {
             const d: *Data = @ptrCast(@alignCast(instance_data));
+            const zapi = ZAPI.init(vsapi, core, frame_ctx);
 
             if (activation_reason == .Initial) {
-                vsapi.?.requestFrameFilter.?(n, d.node, frame_ctx);
+                zapi.requestFrameFilter(n, d.node);
             } else if (activation_reason == .AllFramesReady) {
-                const src = zapi.ZFrame.init(d.node, n, frame_ctx, core, vsapi);
+                const src = zapi.initZFrame(d.node, n);
                 const dst = src.newVideoFrame2(d.planes);
                 defer src.deinit();
 
@@ -76,9 +75,7 @@ fn BoxBlurRT(comptime T: type) type {
 
                 var plane: u32 = 0;
                 while (plane < d.vi.format.numPlanes) : (plane += 1) {
-                    if (!(d.planes[plane])) {
-                        continue;
-                    }
+                    if (!(d.planes[plane])) continue;
 
                     const srcp = src.getReadSlice2(T, plane);
                     const dstp = dst.getWriteSlice2(T, plane);
@@ -96,51 +93,46 @@ fn BoxBlurRT(comptime T: type) type {
     };
 }
 
-export fn boxBlurFree(instance_data: ?*anyopaque, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.C) void {
-    _ = core;
+fn boxBlurFree(instance_data: ?*anyopaque, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.c) void {
     const d: *Data = @ptrCast(@alignCast(instance_data));
+    const zapi = ZAPI.init(vsapi, core, null);
 
-    vsapi.?.freeNode.?(d.node);
+    zapi.freeNode(d.node);
     allocator.destroy(d);
 }
 
-pub export fn boxBlurCreate(in: ?*const vs.Map, out: ?*vs.Map, user_data: ?*anyopaque, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.C) void {
-    _ = user_data;
-    var d: Data = undefined;
+pub fn boxBlurCreate(in: ?*const vs.Map, out: ?*vs.Map, _: ?*anyopaque, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.c) void {
+    var d: Data = .{};
 
-    const map_in = zapi.ZMap.init(in, vsapi);
-    const map_out = zapi.ZMap.init(out, vsapi);
-    d.node, d.vi = map_in.getNodeVi("clip");
-    const dt = helper.DataType.select(map_out, d.node, d.vi, filter_name) catch return;
+    const zapi = ZAPI.init(vsapi, core, null);
+    const map_in = zapi.initZMap(in);
+    const map_out = zapi.initZMap(out);
+    d.node, d.vi = map_in.getNodeVi("clip").?;
+    const dt = hz.DataType.select(map_out, d.node, d.vi, filter_name, false) catch return;
 
     d.tmp_size = @intCast(@max(d.vi.width, d.vi.height));
 
     var nodes = [_]?*vs.Node{d.node};
-    var planes = [3]bool{ true, true, true };
-    helper.mapGetPlanes(map_in, map_out, &nodes, &planes, d.vi.format.numPlanes, filter_name, vsapi) catch return;
-    d.planes = planes;
+    hz.mapGetPlanes(map_in, map_out, &nodes, &d.planes, d.vi.format.numPlanes, filter_name, &zapi) catch return;
 
-    d.hradius = map_in.getInt(u32, "hradius") orelse 1;
-    d.vradius = map_in.getInt(u32, "vradius") orelse 1;
-    d.hpasses = map_in.getInt(i32, "hpasses") orelse 1;
-    d.vpasses = map_in.getInt(i32, "vpasses") orelse 1;
+    d.hradius = map_in.getValue(u32, "hradius") orelse 1;
+    d.vradius = map_in.getValue(u32, "vradius") orelse 1;
+    d.hpasses = map_in.getValue(i32, "hpasses") orelse 1;
+    d.vpasses = map_in.getValue(i32, "vpasses") orelse 1;
 
     const vblur = (d.vradius > 0) and (d.vpasses > 0);
     const hblur = (d.hradius > 0) and (d.hpasses > 0);
     if (!vblur and !hblur) {
         map_out.setError(filter_name ++ ": nothing to be performed");
-        vsapi.?.freeNode.?(d.node);
+        zapi.freeNode(d.node);
         return;
     }
 
     const data: *Data = allocator.create(Data) catch unreachable;
     data.* = d;
 
-    var deps = [_]vs.FilterDependency{
-        vs.FilterDependency{
-            .source = d.node,
-            .requestPattern = .StrictSpatial,
-        },
+    const deps = [_]vs.FilterDependency{
+        .{ .source = d.node, .requestPattern = .StrictSpatial },
     };
 
     const use_rt: bool = (d.hradius != d.vradius) or (d.hradius > 22) or (d.hpasses > 1) or (d.vpasses > 1);
@@ -151,6 +143,7 @@ pub export fn boxBlurCreate(in: ?*const vs.Map, out: ?*vs.Map, user_data: ?*anyo
             .U16 => &BoxBlurRT(u16).getFrame,
             .F16 => &BoxBlurRT(f16).getFrame,
             .F32 => &BoxBlurRT(f32).getFrame,
+            .U32 => unreachable,
         };
     } else {
         get_frame = switch (d.hradius) {
@@ -159,10 +152,11 @@ pub export fn boxBlurCreate(in: ?*const vs.Map, out: ?*vs.Map, user_data: ?*anyo
                 .U16 => &BoxBlurCT(u16, r).getFrame,
                 .F16 => &BoxBlurCT(f16, r).getFrame,
                 .F32 => &BoxBlurCT(f32, r).getFrame,
+                .U32 => unreachable,
             },
             else => unreachable,
         };
     }
 
-    vsapi.?.createVideoFilter.?(out, filter_name, d.vi, get_frame, boxBlurFree, .Parallel, &deps, deps.len, data, core);
+    zapi.createVideoFilter(out, filter_name, d.vi, get_frame, boxBlurFree, .Parallel, &deps, data);
 }

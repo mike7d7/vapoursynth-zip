@@ -10,25 +10,14 @@ if ! command -v jq > /dev/null; then
   exit 1
 fi
 
-json_file="index.json" 
-
-if [ -e "${json_file}" ]
-then
-    echo "Using cached Zig index.json"
-else
-    echo "Downloading index.json..."
-    wget https://ziglang.org/download/index.json
-fi
-
-VER=$(jq -r '.master.version' "${json_file}")
-ZNAME="zig-linux-x86_64-${VER}"
+ZNAME="zig-x86_64-linux-0.15.2"
 
 if [ -e "${ZNAME}" ]
 then
     echo "Using cached ${ZNAME}"
 else
     echo "Downloading ${ZNAME}..."
-    wget "https://ziglang.org/builds/${ZNAME}.tar.xz"
+    wget "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
     tar -xf "${ZNAME}.tar.xz"
 fi
 

@@ -1,32 +1,34 @@
 const std = @import("std");
 const math = std.math;
 
-const helper = @import("../helper.zig");
+const hz = @import("../helper.zig");
 const vszip = @import("../vszip.zig");
-const vs = vszip.vs;
-const vsh = vszip.vsh;
-const zapi = vszip.zapi;
+
+const vapoursynth = vszip.vapoursynth;
+const vs = vapoursynth.vapoursynth4;
+const ZAPI = vapoursynth.ZAPI;
 
 const allocator = std.heap.c_allocator;
 pub const filter_name = "AdaptiveBinarize";
 
 const Data = struct {
-    node: ?*vs.Node,
-    node2: ?*vs.Node,
-    vi: *const vs.VideoInfo,
-    tab: [768]u8,
+    node: ?*vs.Node = null,
+    node2: ?*vs.Node = null,
+    vi: *const vs.VideoInfo = undefined,
+    tab: [255 * 2 + 1]u8 = undefined,
 };
 
-fn adaptiveBinarizeGetFrame(n: c_int, activation_reason: vs.ActivationReason, instance_data: ?*anyopaque, frame_data: ?*?*anyopaque, frame_ctx: ?*vs.FrameContext, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.C) ?*const vs.Frame {
-    _ = frame_data;
+fn adaptiveBinarizeGetFrame(n: c_int, activation_reason: vs.ActivationReason, instance_data: ?*anyopaque, _: ?*?*anyopaque, frame_ctx: ?*vs.FrameContext, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.c) ?*const vs.Frame {
     const d: *Data = @ptrCast(@alignCast(instance_data));
+    const zapi = ZAPI.init(vsapi, core, frame_ctx);
 
     if (activation_reason == .Initial) {
-        vsapi.?.requestFrameFilter.?(n, d.node, frame_ctx);
-        vsapi.?.requestFrameFilter.?(n, d.node2, frame_ctx);
+        zapi.requestFrameFilter(n, d.node);
+        zapi.requestFrameFilter(n, d.node2);
     } else if (activation_reason == .AllFramesReady) {
-        const src = zapi.ZFrame.init(d.node, n, frame_ctx, core, vsapi);
-        const src2 = zapi.ZFrame.init(d.node2, n, frame_ctx, core, vsapi);
+        const src = zapi.initZFrame(d.node, n);
+        const src2 = zapi.initZFrame(d.node2, n);
+
         defer src.deinit();
         defer src2.deinit();
         const dst = src.newVideoFrame();
@@ -52,47 +54,43 @@ fn adaptiveBinarizeGetFrame(n: c_int, activation_reason: vs.ActivationReason, in
             }
         }
 
-        const dst_prop = dst.getProperties();
-        dst_prop.setInt("_ColorRange", 0, .Replace);
+        const dst_prop = dst.getPropertiesRW();
+        dst_prop.setColorRange(.FULL);
         return dst.frame;
     }
 
     return null;
 }
 
-export fn adaptiveBinarizeFree(instance_data: ?*anyopaque, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.C) void {
-    _ = core;
+fn adaptiveBinarizeFree(instance_data: ?*anyopaque, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.c) void {
     const d: *Data = @ptrCast(@alignCast(instance_data));
-    vsapi.?.freeNode.?(d.node);
-    vsapi.?.freeNode.?(d.node2);
+    const zapi = ZAPI.init(vsapi, core, null);
+
+    zapi.freeNode(d.node);
+    zapi.freeNode(d.node2);
     allocator.destroy(d);
 }
 
-pub export fn adaptiveBinarizeCreate(in: ?*const vs.Map, out: ?*vs.Map, user_data: ?*anyopaque, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.C) void {
-    _ = user_data;
-    var d: Data = undefined;
-    const map_in = zapi.ZMap.init(in, vsapi);
-    const map_out = zapi.ZMap.init(out, vsapi);
+pub fn adaptiveBinarizeCreate(in: ?*const vs.Map, out: ?*vs.Map, _: ?*anyopaque, core: ?*vs.Core, vsapi: ?*const vs.API) callconv(.c) void {
+    var d: Data = .{};
+    const zapi = ZAPI.init(vsapi, core, null);
+    const map_in = zapi.initZMap(in);
+    const map_out = zapi.initZMap(out);
 
-    d.node, d.vi = map_in.getNodeVi("clip");
-    d.node2, const vi2 = map_in.getNodeVi("clip2");
+    d.node, d.vi = map_in.getNodeVi("clip").?;
+    d.node2 = map_in.getNode("clip2");
 
-    helper.compareNodes(map_out, d.node, d.node2, d.vi, vi2, filter_name, vsapi) catch return;
+    const nodes = [_]?*vs.Node{ d.node, d.node2 };
+    hz.compareNodes(map_out, &nodes, .BIGGER_THAN, filter_name, &zapi) catch return;
+
     if ((d.vi.format.sampleType != .Integer) or (d.vi.format.bitsPerSample != 8)) {
         map_out.setError(filter_name ++ ": only 8 bit int format supported.");
-        vsapi.?.freeNode.?(d.node);
-        vsapi.?.freeNode.?(d.node2);
+        zapi.freeNode(d.node);
+        zapi.freeNode(d.node2);
         return;
     }
 
-    if (d.vi.numFrames != vi2.numFrames) {
-        vsapi.?.mapSetError.?(out, filter_name ++ " : clips must have the same length.");
-        vsapi.?.freeNode.?(d.node);
-        vsapi.?.freeNode.?(d.node2);
-        return;
-    }
-
-    const c_param = map_in.getInt(i32, "c") orelse 3;
+    const c_param = map_in.getValue(i32, "c") orelse 3;
     for (&d.tab, 0..) |*i, n| {
         i.* = if (@as(i32, @intCast(n)) - 255 <= -c_param) 255 else 0;
     }
@@ -100,16 +98,10 @@ pub export fn adaptiveBinarizeCreate(in: ?*const vs.Map, out: ?*vs.Map, user_dat
     const data: *Data = allocator.create(Data) catch unreachable;
     data.* = d;
 
-    var deps = [_]vs.FilterDependency{
-        vs.FilterDependency{
-            .source = d.node,
-            .requestPattern = .StrictSpatial,
-        },
-        vs.FilterDependency{
-            .source = d.node2,
-            .requestPattern = .StrictSpatial,
-        },
+    const deps = [_]vs.FilterDependency{
+        .{ .source = d.node, .requestPattern = .StrictSpatial },
+        .{ .source = d.node2, .requestPattern = .StrictSpatial },
     };
 
-    vsapi.?.createVideoFilter.?(out, filter_name, d.vi, adaptiveBinarizeGetFrame, adaptiveBinarizeFree, .Parallel, &deps, deps.len, data, core);
+    zapi.createVideoFilter(out, filter_name, d.vi, adaptiveBinarizeGetFrame, adaptiveBinarizeFree, .Parallel, &deps, data);
 }

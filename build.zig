@@ -1,18 +1,32 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 
-pub const min_zig_version = std.SemanticVersion{ .major = 0, .minor = 14, .patch = 0, .pre = "dev.1632" };
-
-pub fn build(b: *std.Build) void {
-    ensureZigVersion() catch return;
+pub fn build(b: *std.Build) !void {
+    ensureZigVersion(try .parse(zon.minimum_zig_version)) catch return;
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addSharedLibrary(.{
+    const lib = b.addLibrary(.{
         .name = "vszip",
-        .root_source_file = b.path("src/vszip.zig"),
+        .linkage = .dynamic,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vszip.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const options = b.addOptions();
+    const version = try std.SemanticVersion.parse(zon.version);
+    options.addOption(std.SemanticVersion, "version", version);
+    lib.root_module.addOptions("zon", options);
+
+    const zigimg_dependency = b.dependency("zigimg", .{
         .target = target,
         .optimize = optimize,
     });
+
+    lib.root_module.addImport("zigimg", zigimg_dependency.module("zigimg"));
 
     const vapoursynth_dep = b.dependency("vapoursynth", .{
         .target = target,
@@ -29,7 +43,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(lib);
 }
 
-fn ensureZigVersion() !void {
+fn ensureZigVersion(min_zig_version: std.SemanticVersion) !void {
     var installed_ver = @import("builtin").zig_version;
     installed_ver.build = null;
 
