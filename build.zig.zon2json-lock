@@ -1,7 +1,14 @@
 {
-  "1220532eb543f1169a359cc0821533ce699c7fd81a2cd2fd00c886eec72df066adaf": {
+  "vapoursynth-4.0.0-jLYMQ799AgCA8sL5lgewK9acIrAKjs-ByT2pdKI5dHq2": {
     "name": "vapoursynth",
-    "url": "git+https://github.com/dnjulek/vapoursynth-zig.git#078212d9cd1cf2911d3a30b49a2e23a3666b3197",
-    "hash": "sha256-v3QOVblzhImgasQp+iSqJV8aqdyj1m//XsYa5qylMgk="
+    "url": "git+https://github.com/dnjulek/vapoursynth-zig.git#8e93fe3433bb977135f81040bb59d964c58a1cb9",
+    "hash": "sha256-tcBr4q7/8u/8xmBO2dbtExi3n5j006nh6/fniO37UK4=",
+    "rev": "8e93fe3433bb977135f81040bb59d964c58a1cb9"
+  },
+  "zigimg-0.1.0-8_eo2jNrFQD4mu3EAUkfQRmCkyfprdIXc8JQ6uyxhjSQ": {
+    "name": "zigimg",
+    "url": "git+https://github.com/zigimg/zigimg.git#362cdd6bce109f7bc674be134cddd378f52da5d4",
+    "hash": "sha256-Pe7OAtocaH18FhpSwz3NNZLrBI9BS1rfOehq2UVmu6g=",
+    "rev": "362cdd6bce109f7bc674be134cddd378f52da5d4"
   }
 }
